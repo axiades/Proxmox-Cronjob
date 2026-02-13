@@ -168,11 +168,15 @@ case "$SSL_MODE" in
         ln -sf /etc/nginx/sites-available/proxmox-cronjob.conf /etc/nginx/sites-enabled/
         nginx -t && systemctl reload nginx || true
         apt-get install -y certbot python3-certbot-nginx
-        certbot certonly --webroot -w "$WEBROOT" -d "$NGINX_DOMAIN" \
-            -m "$LE_EMAIL" --agree-tos --non-interactive
-        CERT_PATH="/etc/letsencrypt/live/$NGINX_DOMAIN/fullchain.pem"
-        KEY_PATH="/etc/letsencrypt/live/$NGINX_DOMAIN/privkey.pem"
-        create_https_config
+        if certbot certonly --webroot -w "$WEBROOT" -d "$NGINX_DOMAIN" \
+            -m "$LE_EMAIL" --agree-tos --non-interactive; then
+            CERT_PATH="/etc/letsencrypt/live/$NGINX_DOMAIN/fullchain.pem"
+            KEY_PATH="/etc/letsencrypt/live/$NGINX_DOMAIN/privkey.pem"
+            create_https_config
+        else
+            echo "Let's Encrypt failed, falling back to HTTP only."
+            create_http_config
+        fi
         ;;
     4)
         create_http_config
@@ -181,10 +185,14 @@ case "$SSL_MODE" in
         if [ ! -d "/root/.acme.sh" ]; then
             curl https://get.acme.sh | sh
         fi
-        /root/.acme.sh/acme.sh --issue --webroot "$WEBROOT" -d "$NGINX_DOMAIN"
-        CERT_PATH="/root/.acme.sh/$NGINX_DOMAIN/fullchain.cer"
-        KEY_PATH="/root/.acme.sh/$NGINX_DOMAIN/$NGINX_DOMAIN.key"
-        create_https_config
+        if /root/.acme.sh/acme.sh --issue --webroot "$WEBROOT" -d "$NGINX_DOMAIN"; then
+            CERT_PATH="/root/.acme.sh/$NGINX_DOMAIN/fullchain.cer"
+            KEY_PATH="/root/.acme.sh/$NGINX_DOMAIN/$NGINX_DOMAIN.key"
+            create_https_config
+        else
+            echo "acme.sh failed, falling back to HTTP only."
+            create_http_config
+        fi
         ;;
     *)
         echo "Invalid option, defaulting to HTTP only."
