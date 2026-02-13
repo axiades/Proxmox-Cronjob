@@ -64,6 +64,26 @@ if [ ! -f .env ]; then
 fi
 
 echo ""
+echo "5.1 Writing credentials file..."
+cat > /root/proxmox-cronjob-credentials.txt << EOF
+Proxmox Cronjob Credentials
+===========================
+Database:
+    User: $DB_USER
+    Password: changeme
+    Database: $DB_NAME
+    Host: localhost
+    Port: 5432
+
+Config:
+    .env path: $INSTALL_DIR/backend/.env
+
+Note:
+    Change the database password and update DATABASE_URL in .env.
+EOF
+chmod 600 /root/proxmox-cronjob-credentials.txt
+
+echo ""
 echo "6. Loading database schema..."
 sudo -u postgres psql -d $DB_NAME -f ../database/schema.sql
 
