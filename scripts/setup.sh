@@ -64,16 +64,32 @@ if [ ! -f .env ]; then
 fi
 
 echo ""
+echo "5.0 Generating secrets and database URL..."
+DB_PASS="changeme"
+DATABASE_URL="postgresql+psycopg://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME"
+SECRET_KEY=$(openssl rand -hex 32)
+ENCRYPTION_KEY=$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+
+sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DATABASE_URL|" .env
+sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$SECRET_KEY|" .env
+sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$ENCRYPTION_KEY|" .env
+
+echo ""
 echo "5.1 Writing credentials file..."
 cat > /root/proxmox-cronjob-credentials.txt << EOF
 Proxmox Cronjob Credentials
 ===========================
 Database:
     User: $DB_USER
-    Password: changeme
+    Password: $DB_PASS
     Database: $DB_NAME
     Host: localhost
     Port: 5432
+    URL: $DATABASE_URL
+
+Security:
+    SECRET_KEY: $SECRET_KEY
+    ENCRYPTION_KEY: $ENCRYPTION_KEY
 
 Config:
     .env path: $INSTALL_DIR/backend/.env

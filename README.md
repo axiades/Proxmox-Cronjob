@@ -105,7 +105,7 @@ Diese Zusatzanleitung ist für Server in Cloud-Umgebungen gedacht, die **nicht**
 bash -c "sudo apt-get update && sudo apt-get install -y git curl build-essential python3-dev libpq-dev pkg-config gcc && command -v cargo >/dev/null 2>&1 || (curl https://sh.rustup.rs -sSf | sh -s -- -y) && source $HOME/.cargo/env && sudo mkdir -p /opt && sudo git clone https://github.com/axiades/Proxmox-Cronjob.git /opt/proxmox-cronjob && cd /opt/proxmox-cronjob && sudo chmod +x scripts/setup.sh && sudo ./scripts/setup.sh"
 ```
 
-Nach dem Lauf findest du die Zugangsdaten unter `/root/proxmox-cronjob-credentials.txt`.
+Nach dem Lauf findest du die Zugangsdaten (DB-URL, SECRET_KEY, ENCRYPTION_KEY) unter `/root/proxmox-cronjob-credentials.txt`.
 
 #### Wichtige Cloud-Anpassungen
 
