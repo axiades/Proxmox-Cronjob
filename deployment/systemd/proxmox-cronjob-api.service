@@ -1,0 +1,21 @@
+[Unit]
+Description=Proxmox Cronjob Web Interface API
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/proxmox-cronjob/backend
+Environment="PATH=/opt/proxmox-cronjob/backend/venv/bin"
+ExecStart=/opt/proxmox-cronjob/backend/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proxmox-cronjob-api
+
+[Install]
+WantedBy=multi-user.target

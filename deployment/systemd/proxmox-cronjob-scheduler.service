@@ -1,0 +1,21 @@
+[Unit]
+Description=Proxmox Cronjob Scheduler Daemon
+After=network.target postgresql.service proxmox-cronjob-api.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/proxmox-cronjob/backend
+Environment="PATH=/opt/proxmox-cronjob/backend/venv/bin"
+ExecStart=/opt/proxmox-cronjob/backend/venv/bin/python scheduler_daemon.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proxmox-cronjob-scheduler
+
+[Install]
+WantedBy=multi-user.target
