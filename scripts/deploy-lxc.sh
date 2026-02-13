@@ -267,7 +267,7 @@ msg_ok "Node.js installed"
 
 # Clone repository
 msg_info "Cloning repository"
-pct exec "$CTID" -- bash -c "cd /opt && git clone https://github.com/YOUR-USERNAME/Proxmox-Cronjob.git proxmox-cronjob || true"
+pct exec "$CTID" -- bash -c "cd /opt && git clone https://github.com/axiades/Proxmox-Cronjob.git proxmox-cronjob || true"
 
 # If git clone fails (no remote repo), copy files from host
 if ! pct exec "$CTID" -- bash -c "[ -d /opt/proxmox-cronjob ]"; then
