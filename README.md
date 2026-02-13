@@ -84,6 +84,37 @@ chmod +x scripts/setup.sh
 ./scripts/setup.sh
 ```
 
+### ☁️ Cloud-Setup (z.B. Hetzner Cloud)
+
+Diese Zusatzanleitung ist für Server in Cloud-Umgebungen gedacht, die **nicht** im gleichen Netzwerk wie Proxmox liegen.
+
+**Voraussetzungen:**
+- Öffentliche VM (Debian 11/12 oder Ubuntu 20.04/22.04)
+- Erreichbarkeit der Proxmox API über VPN, WireGuard oder IP-Whitelist
+- DNS-Name (optional, empfohlen für HTTPS)
+
+**Firewall/Ports (Cloud-Security-Group):**
+- `22/tcp` SSH
+- `80/tcp` HTTP
+- `443/tcp` HTTPS
+
+#### One-Line Install Script
+
+```bash
+bash -c "sudo apt-get update && sudo apt-get install -y git curl && sudo mkdir -p /opt && sudo git clone https://github.com/axiades/Proxmox-Cronjob.git /opt/proxmox-cronjob && cd /opt/proxmox-cronjob && sudo chmod +x scripts/setup.sh && sudo ./scripts/setup.sh"
+```
+
+#### Wichtige Cloud-Anpassungen
+
+1. **.env anpassen** (Proxmox per VPN/Whitelist erreichbar machen):
+  - `PROXMOX_HOST` auf die **erreichbare** IP/FQDN setzen
+  - `PROXMOX_VERIFY_SSL=false` falls internes Zertifikat genutzt wird
+2. **Nginx/HTTPS**:
+  - Für öffentliches DNS: Let's Encrypt nutzen (siehe Schritt 6)
+3. **Security**:
+  - Standard-Login sofort ändern
+  - Admin-Token in Proxmox minimal berechtigen
+
 ### 4. Konfiguration anpassen
 
 ```bash
