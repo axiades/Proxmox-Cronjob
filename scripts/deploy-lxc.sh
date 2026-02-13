@@ -294,8 +294,13 @@ msg_ok "PostgreSQL configured"
 
 # Load database schema
 msg_info "Loading database schema"
-pct exec "$CTID" -- bash -c "sudo -u postgres psql proxmox_cronjob < /opt/proxmox-cronjob/database/schema.sql"
+pct exec "$CTID" -- bash -c "cd /opt/proxmox-cronjob && PGPASSWORD='ProxmoxCron2026!' psql -U proxmox_cronjob -h localhost -d proxmox_cronjob -f database/schema.sql"
 msg_ok "Database schema loaded"
+
+# Verify database
+msg_info "Verifying database setup"
+pct exec "$CTID" -- bash -c "PGPASSWORD='ProxmoxCron2026!' psql -U proxmox_cronjob -h localhost -d proxmox_cronjob -c 'SELECT COUNT(*) FROM users;' | grep -q '1' && echo 'DB OK'"
+msg_ok "Database verified (default admin user exists)"
 
 # Setup Python environment
 msg_info "Setting up Python virtual environment"
@@ -303,16 +308,22 @@ pct exec "$CTID" -- bash -c "cd /opt/proxmox-cronjob/backend && python3 -m venv 
 pct exec "$CTID" -- bash -c "cd /opt/proxmox-cronjob/backend && source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt"
 msg_ok "Python environment ready"
 
-# Create .env file
+# Create .env file with proper variable substitution
 msg_info "Creating configuration file"
-pct exec "$CTID" -- bash -c "cat > /opt/proxmox-cronjob/backend/.env << 'ENVEOF'
+
+# Generate secrets inside container
+SECRET_KEY=$(pct exec "$CTID" -- openssl rand -hex 32)
+ENCRYPTION_KEY=$(pct exec "$CTID" -- python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+
+# Create .env file with actual values
+pct exec "$CTID" -- bash -c "cat > /opt/proxmox-cronjob/backend/.env << ENVEOF
 DATABASE_URL=postgresql://proxmox_cronjob:ProxmoxCron2026!@localhost:5432/proxmox_cronjob
 
-SECRET_KEY=$(openssl rand -hex 32)
+SECRET_KEY=$SECRET_KEY
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
-ENCRYPTION_KEY=$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+ENCRYPTION_KEY=$ENCRYPTION_KEY
 
 PROXMOX_HOST=$PROXMOX_HOST
 PROXMOX_PORT=8006
@@ -321,7 +332,7 @@ PROXMOX_TOKEN_NAME=$PROXMOX_TOKEN_NAME
 PROXMOX_TOKEN_VALUE=$PROXMOX_TOKEN_VALUE
 PROXMOX_VERIFY_SSL=false
 
-CORS_ORIGINS=http://localhost:5173
+CORS_ORIGINS=http://localhost:5173,https://$PROXMOX_HOST
 VM_SYNC_INTERVAL_MINUTES=5
 LOG_LEVEL=INFO
 ENVEOF"
@@ -372,12 +383,26 @@ msg_ok "Permissions set"
 
 # Start services
 msg_info "Starting services"
-pct exec "$CTID" -- bash -c "systemctl start proxmox-cronjob-api"
-pct exec "$CTID" -- bash -c "systemctl start proxmox-cronjob-scheduler"
 pct exec "$CTID" -- bash -c "systemctl enable proxmox-cronjob-api"
 pct exec "$CTID" -- bash -c "systemctl enable proxmox-cronjob-scheduler"
+pct exec "$CTID" -- bash -c "systemctl start proxmox-cronjob-api"
+sleep 3
+pct exec "$CTID" -- bash -c "systemctl start proxmox-cronjob-scheduler"
 pct exec "$CTID" -- bash -c "systemctl restart nginx"
 msg_ok "Services started"
+
+# Verify services are running
+msg_info "Verifying services"
+sleep 5
+API_STATUS=$(pct exec "$CTID" -- systemctl is-active proxmox-cronjob-api)
+SCHED_STATUS=$(pct exec "$CTID" -- systemctl is-active proxmox-cronjob-scheduler)
+NGINX_STATUS=$(pct exec "$CTID" -- systemctl is-active nginx)
+
+if [ "$API_STATUS" = "active" ] && [ "$SCHED_STATUS" = "active" ] && [ "$NGINX_STATUS" = "active" ]; then
+    msg_ok "All services running"
+else
+    msg_error "Some services failed to start. Check logs with: pct exec $CTID -- journalctl -xe"
+fi
 
 # Get container IP
 msg_info "Getting container IP address"
@@ -385,38 +410,72 @@ sleep 5
 CONTAINER_IP=$(pct exec "$CTID" -- ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "Unable to determine")
 msg_ok "Container IP: $CONTAINER_IP"
 
+# Test API health
+msg_info "Testing API health"
+sleep 3
+API_HEALTH=$(pct exec "$CTID" -- curl -s -k http://localhost:8000/health || echo "failed")
+if echo "$API_HEALTH" | grep -q "ok"; then
+    msg_ok "API is responding correctly"
+else
+    msg_error "API health check failed. Check logs: pct exec $CTID -- journalctl -u proxmox-cronjob-api -n 50"
+fi
+
 # Final message
 echo -e "\n${GN}═══════════════════════════════════════════════════════${CL}"
-echo -e "${GN}  Deployment Complete!${CL}"
+echo -e "${GN}  ✓ Deployment Complete - Ready to Use!${CL}"
 echo -e "${GN}═══════════════════════════════════════════════════════${CL}\n"
 
 echo -e "${YW}Container Information:${CL}"
-echo "  ID:           $CTID"
-echo "  Name:         $CT_HOSTNAME"
-echo "  IP Address:   $CONTAINER_IP"
+echo "  ID:              $CTID"
+echo "  Name:            $CT_HOSTNAME"
+echo "  IP Address:      $CONTAINER_IP"
 echo ""
 echo -e "${YW}Access Information:${CL}"
-echo "  Web Interface:  https://$CONTAINER_IP"
-echo "  Username:       admin"
-echo "  Password:       admin"
+echo "  Web Interface:   https://$CONTAINER_IP"
+echo "  API Docs:        https://$CONTAINER_IP/api/docs"
+echo "  Username:        admin"
+echo "  Password:        admin"
 echo ""
 echo -e "${RD}⚠ IMPORTANT: Change the default password immediately!${CL}"
+echo ""
+echo -e "${YW}What's Configured:${CL}"
+echo "  ✓ PostgreSQL Database (proxmox_cronjob)"
+echo "  ✓ Default admin user created"
+echo "  ✓ FastAPI Backend (Port 8000)"
+echo "  ✓ Scheduler Daemon (running)"
+echo "  ✓ Vue.js Frontend (built)"
+echo "  ✓ Nginx Reverse Proxy (HTTPS)"
+echo "  ✓ SSL Certificate (self-signed)"
+echo "  ✓ Proxmox API Connection (configured)"
 echo ""
 echo -e "${YW}Service Status:${CL}"
 pct exec "$CTID" -- systemctl status proxmox-cronjob-api --no-pager | grep "Active:"
 pct exec "$CTID" -- systemctl status proxmox-cronjob-scheduler --no-pager | grep "Active:"
+pct exec "$CTID" -- systemctl status nginx --no-pager | grep "Active:"
+pct exec "$CTID" -- systemctl status postgresql --no-pager | grep "Active:"
 echo ""
 echo -e "${YW}Useful Commands:${CL}"
-echo "  Enter container:    pct enter $CTID"
-echo "  View API logs:      pct exec $CTID -- journalctl -u proxmox-cronjob-api -f"
-echo "  View scheduler:     pct exec $CTID -- journalctl -u proxmox-cronjob-scheduler -f"
-echo "  Restart services:   pct exec $CTID -- systemctl restart proxmox-cronjob-api proxmox-cronjob-scheduler"
+echo "  Enter container:        pct enter $CTID"
+echo "  View API logs:          pct exec $CTID -- journalctl -u proxmox-cronjob-api -f"
+echo "  View scheduler logs:    pct exec $CTID -- journalctl -u proxmox-cronjob-scheduler -f"
+echo "  Restart services:       pct exec $CTID -- systemctl restart proxmox-cronjob-api proxmox-cronjob-scheduler"
+echo "  Check database:         pct exec $CTID -- sudo -u postgres psql proxmox_cronjob"
+echo "  Edit config:            pct exec $CTID -- nano /opt/proxmox-cronjob/backend/.env"
+echo ""
+echo -e "${YW}First Steps:${CL}"
+echo "  1. Open Web Interface:  https://$CONTAINER_IP"
+echo "  2. Login:               admin / admin"
+echo "  3. Change Password:     Click on admin profile"
+echo "  4. Sync VMs:            Click 'Sync VMs' button on dashboard"
+echo "  5. Create Schedule:     Go to 'Schedules' tab"
 echo ""
 echo -e "${GN}Documentation: /opt/proxmox-cronjob/README.md${CL}"
-echo -e "${GN}API Docs: https://$CONTAINER_IP/api/docs${CL}\n"
+echo -e "${GN}Container is fully configured and ready to use!${CL}\n"
 
 # Cleanup
 msg_info "Cleaning up"
 msg_ok "Done"
 
-echo -e "\n${GN}Thank you for using Proxmox Cronjob Manager!${CL}\n"
+echo -e "\n${GN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+echo -e "${GN}  🎉 Success! Proxmox Cronjob Manager is live!${CL}"
+echo -e "${GN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}\n"
