@@ -74,8 +74,124 @@ cp ../deployment/systemd/proxmox-cronjob-scheduler.service /etc/systemd/system/
 systemctl daemon-reload
 
 echo ""
-echo "8. Installing Nginx configuration..."
-cp ../deployment/nginx/proxmox-cronjob.conf /etc/nginx/sites-available/
+echo "8. Installing Nginx configuration (interactive)..."
+
+read -r -p "Domain (FQDN, z.B. cronjob.example.com) oder IP: " NGINX_DOMAIN
+if [ -z "$NGINX_DOMAIN" ]; then
+    NGINX_DOMAIN="_"
+fi
+
+echo "Choose SSL/ACME mode:"
+echo "  1) HTTP only (no TLS)"
+echo "  2) HTTPS with existing certificate paths"
+echo "  3) Let's Encrypt via certbot (webroot)"
+echo "  4) ACME via acme.sh (webroot)"
+read -r -p "Select [1-4]: " SSL_MODE
+
+WEBROOT="/var/www/proxmox-cronjob"
+CERT_PATH=""
+KEY_PATH=""
+
+create_http_config() {
+cat > /etc/nginx/sites-available/proxmox-cronjob.conf << EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $NGINX_DOMAIN;
+
+    root $WEBROOT;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+EOF
+}
+
+create_https_config() {
+cat > /etc/nginx/sites-available/proxmox-cronjob.conf << EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $NGINX_DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name $NGINX_DOMAIN;
+
+    ssl_certificate $CERT_PATH;
+    ssl_certificate_key $KEY_PATH;
+
+    root $WEBROOT;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+EOF
+}
+
+case "$SSL_MODE" in
+    1)
+        create_http_config
+        ;;
+    2)
+        read -r -p "Path to certificate (fullchain.pem or .crt): " CERT_PATH
+        read -r -p "Path to private key (.key): " KEY_PATH
+        create_https_config
+        ;;
+    3)
+        read -r -p "Email for Let's Encrypt: " LE_EMAIL
+        create_http_config
+        ln -sf /etc/nginx/sites-available/proxmox-cronjob.conf /etc/nginx/sites-enabled/
+        nginx -t && systemctl reload nginx || true
+        apt-get install -y certbot python3-certbot-nginx
+        certbot certonly --webroot -w "$WEBROOT" -d "$NGINX_DOMAIN" \
+            -m "$LE_EMAIL" --agree-tos --non-interactive
+        CERT_PATH="/etc/letsencrypt/live/$NGINX_DOMAIN/fullchain.pem"
+        KEY_PATH="/etc/letsencrypt/live/$NGINX_DOMAIN/privkey.pem"
+        create_https_config
+        ;;
+    4)
+        create_http_config
+        ln -sf /etc/nginx/sites-available/proxmox-cronjob.conf /etc/nginx/sites-enabled/
+        nginx -t && systemctl reload nginx || true
+        if [ ! -d "/root/.acme.sh" ]; then
+            curl https://get.acme.sh | sh
+        fi
+        /root/.acme.sh/acme.sh --issue --webroot "$WEBROOT" -d "$NGINX_DOMAIN"
+        CERT_PATH="/root/.acme.sh/$NGINX_DOMAIN/fullchain.cer"
+        KEY_PATH="/root/.acme.sh/$NGINX_DOMAIN/$NGINX_DOMAIN.key"
+        create_https_config
+        ;;
+    *)
+        echo "Invalid option, defaulting to HTTP only."
+        create_http_config
+        ;;
+esac
+
 ln -sf /etc/nginx/sites-available/proxmox-cronjob.conf /etc/nginx/sites-enabled/
 nginx -t
 
@@ -100,16 +216,14 @@ echo "==================================="
 echo ""
 echo "Next steps:"
 echo "1. Edit $INSTALL_DIR/backend/.env with your configuration"
-echo "2. Generate SSL certificates (or use Let's Encrypt)"
-echo "3. Update Nginx configuration with correct SSL paths"
-echo "4. Start services:"
+echo "2. Start services:"
 echo "   systemctl start proxmox-cronjob-api"
 echo "   systemctl start proxmox-cronjob-scheduler"
 echo "   systemctl enable proxmox-cronjob-api"
 echo "   systemctl enable proxmox-cronjob-scheduler"
 echo "   systemctl restart nginx"
 echo ""
-echo "5. Access the interface at https://your-server-ip"
+echo "3. Access the interface at https://your-server-ip or http://your-server-ip"
 echo "   Default credentials: admin / admin"
 echo "   !!! CHANGE THE PASSWORD IMMEDIATELY !!!"
 echo ""
