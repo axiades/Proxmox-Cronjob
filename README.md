@@ -99,19 +99,11 @@ Diese Zusatzanleitung ist für Server in Cloud-Umgebungen gedacht, die **nicht**
 - `80/tcp` HTTP
 - `443/tcp` HTTPS
 
-#### One-Line Install Script
+#### One-Line Install Script (amd64/armhf/arm64, Debian 11/12/13)
 
 ```bash
-bash -c "sudo apt-get update && sudo apt-get install -y git curl && sudo mkdir -p /opt && sudo git clone https://github.com/axiades/Proxmox-Cronjob.git /opt/proxmox-cronjob && cd /opt/proxmox-cronjob && sudo chmod +x scripts/setup.sh && sudo ./scripts/setup.sh"
+bash -c "sudo apt-get update && sudo apt-get install -y git curl build-essential python3-dev libpq-dev pkg-config gcc && command -v cargo >/dev/null 2>&1 || (curl https://sh.rustup.rs -sSf | sh -s -- -y) && source $HOME/.cargo/env && sudo mkdir -p /opt && sudo git clone https://github.com/axiades/Proxmox-Cronjob.git /opt/proxmox-cronjob && cd /opt/proxmox-cronjob && sudo chmod +x scripts/setup.sh && sudo ./scripts/setup.sh"
 ```
-
-#### One-Line Install Script (Debian 13 + neueste Python + Build-Tools)
-
-```bash
-bash -c "sudo apt-get update && sudo apt-get install -y git curl build-essential python3-dev libpq-dev pkg-config gcc && curl https://sh.rustup.rs -sSf | sh -s -- -y && source $HOME/.cargo/env && sudo mkdir -p /opt && sudo git clone https://github.com/axiades/Proxmox-Cronjob.git /opt/proxmox-cronjob && cd /opt/proxmox-cronjob && sudo chmod +x scripts/setup.sh && sudo ./scripts/setup.sh"
-```
-
-Hinweis: Rust/Cargo wird nur fuer den ersten Build benoetigt. Nach erfolgreicher Installation kannst du es entfernen, falls gewuenscht.
 
 #### Wichtige Cloud-Anpassungen
 
