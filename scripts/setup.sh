@@ -215,12 +215,14 @@ case "$SSL_MODE" in
         fi
         ;;
     4)
+        read -r -p "Email for acme.sh account: " ACME_EMAIL
         create_http_config
         ln -sf /etc/nginx/sites-available/proxmox-cronjob.conf /etc/nginx/sites-enabled/
         nginx -t && systemctl reload nginx || true
         if [ ! -d "/root/.acme.sh" ]; then
             curl https://get.acme.sh | sh
         fi
+        /root/.acme.sh/acme.sh --register-account -m "$ACME_EMAIL" || true
         if /root/.acme.sh/acme.sh --issue --webroot "$WEBROOT" -d "$NGINX_DOMAIN"; then
             CERT_PATH="/root/.acme.sh/$NGINX_DOMAIN/fullchain.cer"
             KEY_PATH="/root/.acme.sh/$NGINX_DOMAIN/$NGINX_DOMAIN.key"
