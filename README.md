@@ -105,6 +105,12 @@ Diese Zusatzanleitung ist für Server in Cloud-Umgebungen gedacht, die **nicht**
 bash -c "sudo apt-get update && sudo apt-get install -y git curl && sudo mkdir -p /opt && sudo git clone https://github.com/axiades/Proxmox-Cronjob.git /opt/proxmox-cronjob && cd /opt/proxmox-cronjob && sudo chmod +x scripts/setup.sh && sudo ./scripts/setup.sh"
 ```
 
+#### One-Line Install Script (Debian 13 + neueste Python + Build-Tools)
+
+```bash
+bash -c "sudo apt-get update && sudo apt-get install -y git curl build-essential python3-dev libpq-dev pkg-config gcc && curl https://sh.rustup.rs -sSf | sh -s -- -y && source $HOME/.cargo/env && sudo mkdir -p /opt && sudo git clone https://github.com/axiades/Proxmox-Cronjob.git /opt/proxmox-cronjob && cd /opt/proxmox-cronjob && sudo chmod +x scripts/setup.sh && sudo ./scripts/setup.sh"
+```
+
 #### Wichtige Cloud-Anpassungen
 
 1. **.env anpassen** (Proxmox per VPN/Whitelist erreichbar machen):
