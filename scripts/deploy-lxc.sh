@@ -162,6 +162,45 @@ else
     read -rp "Enter API Token UUID: " PROXMOX_TOKEN_VALUE
 fi
 
+# Network Access Configuration
+echo -e "\n${YW}Network Access Configuration${CL}"
+echo "────────────────────────────────────────"
+echo "How should the web interface be accessed?"
+echo "  1) Local only (private network, internal RZ only)"
+echo "  2) Internet accessible (with DNS, can be exposed via proxy)"
+echo "  3) Corporate proxy setup (behind Hardware Firewall with reverse proxy)"
+read -rp "Choose access mode (1-3) [1]: " NETWORK_ACCESS
+NETWORK_ACCESS=${NETWORK_ACCESS:-1}
+
+case $NETWORK_ACCESS in
+    1)
+        NETWORK_MODE="local"
+        ALLOWED_HOSTS="localhost,127.0.0.1"
+        msg_ok "Mode: Local only (internal network)"
+        ;;
+    2)
+        NETWORK_MODE="internet"
+        read -rp "Enter fully qualified domain name (FQDN) [proxmox-cronjob.local]: " FQDN
+        FQDN=${FQDN:-proxmox-cronjob.local}
+        ALLOWED_HOSTS="$FQDN,localhost"
+        msg_ok "Mode: Internet accessible ($FQDN)"
+        ;;
+    3)
+        NETWORK_MODE="proxy"
+        read -rp "Enter proxy backend address (e.g., cronjob.internal.company.local): " PROXY_BACKEND
+        PROXY_BACKEND=${PROXY_BACKEND:-cronjob.internal.company.local}
+        read -rp "Is this behind a corporate firewall? (Y/n) [Y]: " IS_FIREWALL
+        IS_FIREWALL=${IS_FIREWALL:-Y}
+        ALLOWED_HOSTS="*"
+        msg_ok "Mode: Corporate proxy setup (backend: $PROXY_BACKEND)"
+        ;;
+    *)
+        NETWORK_MODE="local"
+        ALLOWED_HOSTS="localhost,127.0.0.1"
+        msg_ok "Mode: Local only (default)"
+        ;;
+esac
+
 # Summary
 echo -e "\n${YW}Deployment Summary${CL}"
 echo "────────────────────────────────────────"
@@ -174,6 +213,13 @@ echo "Disk:             ${CT_DISK}GB"
 echo "Storage:          $CT_STORAGE"
 echo "Network:          $CT_NET"
 echo "Proxmox Host:     $PROXMOX_HOST"
+if [ "$NETWORK_MODE" = "internet" ]; then
+    echo "Access Mode:      Internet (FQDN: $FQDN)"
+elif [ "$NETWORK_MODE" = "proxy" ]; then
+    echo "Access Mode:      Corporate Proxy ($PROXY_BACKEND)"
+else
+    echo "Access Mode:      Local only (internal)"
+fi
 echo "────────────────────────────────────────"
 
 read -rp "Proceed with deployment? (Y/n): " CONFIRM
@@ -350,15 +396,140 @@ pct exec "$CTID" -- bash -c "mkdir -p /var/www/proxmox-cronjob"
 pct exec "$CTID" -- bash -c "cp -r /opt/proxmox-cronjob/frontend/dist/* /var/www/proxmox-cronjob/"
 msg_ok "Web files deployed"
 
-# Generate self-signed certificate
-msg_info "Generating SSL certificate"
-pct exec "$CTID" -- bash -c "openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-    -keyout /etc/ssl/private/proxmox-cronjob.key \
-    -out /etc/ssl/certs/proxmox-cronjob.crt \
-    -subj '/C=DE/ST=State/L=City/O=Organization/CN=$CT_HOSTNAME'"
-msg_ok "SSL certificate generated"
+# Generate self-signed certificate (or skip for proxy mode)
+if [ "$NETWORK_MODE" != "proxy" ]; then
+    msg_info "Generating SSL certificate"
+    pct exec "$CTID" -- bash -c "openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout /etc/ssl/private/proxmox-cronjob.key \
+        -out /etc/ssl/certs/proxmox-cronjob.crt \
+        -subj '/C=DE/ST=State/L=City/O=Organization/CN=$CT_HOSTNAME'"
+    msg_ok "SSL certificate generated"
+else
+    msg_info "Skipping SSL certificate (behind proxy)"
+    msg_ok "Proxy mode: SSL handled by hardware firewall"
+fi
 
-# Install systemd services
+# Generate dynamic Nginx configuration
+msg_info "Generating Nginx configuration for $NETWORK_MODE mode"
+
+if [ "$NETWORK_MODE" = "local" ]; then
+    # Local only - HTTP only, localhost restriction
+    pct exec "$CTID" -- bash -c "cat > /etc/nginx/sites-available/proxmox-cronjob.conf << 'NGINXEOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    # Allow only local networks
+    allow 127.0.0.1;
+    allow 192.168.0.0/16;
+    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    deny all;
+
+    root /var/www/proxmox-cronjob;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://localhost:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \"upgrade\";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+    }
+}
+NGINXEOF"
+    
+elif [ "$NETWORK_MODE" = "internet" ]; then
+    # Internet accessible - HTTPS required
+    pct exec "$CTID" -- bash -c "cat > /etc/nginx/sites-available/proxmox-cronjob.conf << 'NGINXEOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $FQDN;
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name $FQDN;
+
+    ssl_certificate /etc/ssl/certs/proxmox-cronjob.crt;
+    ssl_certificate_key /etc/ssl/private/proxmox-cronjob.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;
+    add_header X-Content-Type-Options \"nosniff\" always;
+    add_header X-Frame-Options \"SAMEORIGIN\" always;
+    add_header X-XSS-Protection \"1; mode=block\" always;
+
+    root /var/www/proxmox-cronjob;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://localhost:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \"upgrade\";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+NGINXEOF"
+
+elif [ "$NETWORK_MODE" = "proxy" ]; then
+    # Behind corporate proxy/firewall - HTTP only, trust proxy headers
+    pct exec "$CTID" -- bash -c "cat > /etc/nginx/sites-available/proxmox-cronjob.conf << 'NGINXEOF'
+server {
+    listen 8080;
+    listen [::]:8080;
+    server_name _;
+
+    # Behind proxy - accept from any source (firewall handles security)
+    root /var/www/proxmox-cronjob;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://localhost:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \"upgrade\";
+        proxy_set_header Host \$host;
+        
+        # For corporate proxy/firewall setups
+        proxy_set_header X-Real-IP \$http_x_real_ip;
+        proxy_set_header X-Forwarded-For \$http_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$http_x_forwarded_proto;
+        proxy_set_header X-Forwarded-Host \$http_x_forwarded_host;
+        
+        # Pass through authentication headers
+        proxy_pass_header Authorization;
+    }
+}
+NGINXEOF"
+fi
+
+msg_ok "Nginx configuration generated"
 msg_info "Installing systemd services"
 pct exec "$CTID" -- bash -c "cp /opt/proxmox-cronjob/deployment/systemd/proxmox-cronjob-api.service /etc/systemd/system/"
 pct exec "$CTID" -- bash -c "cp /opt/proxmox-cronjob/deployment/systemd/proxmox-cronjob-scheduler.service /etc/systemd/system/"
@@ -367,7 +538,6 @@ msg_ok "Systemd services installed"
 
 # Install Nginx configuration
 msg_info "Configuring Nginx"
-pct exec "$CTID" -- bash -c "cp /opt/proxmox-cronjob/deployment/nginx/proxmox-cronjob.conf /etc/nginx/sites-available/"
 pct exec "$CTID" -- bash -c "ln -sf /etc/nginx/sites-available/proxmox-cronjob.conf /etc/nginx/sites-enabled/"
 pct exec "$CTID" -- bash -c "rm -f /etc/nginx/sites-enabled/default"
 pct exec "$CTID" -- bash -c "nginx -t"
@@ -431,8 +601,21 @@ echo "  Name:            $CT_HOSTNAME"
 echo "  IP Address:      $CONTAINER_IP"
 echo ""
 echo -e "${YW}Access Information:${CL}"
-echo "  Web Interface:   https://$CONTAINER_IP"
-echo "  API Docs:        https://$CONTAINER_IP/api/docs"
+if [ "$NETWORK_MODE" = "local" ]; then
+    echo "  Web Interface:   http://$CONTAINER_IP (local only)"
+    echo "  API Docs:        http://$CONTAINER_IP/api/docs"
+    echo "  Note:            Accessible only from internal networks (192.168.*, 10.*, 172.16.*)"
+elif [ "$NETWORK_MODE" = "internet" ]; then
+    echo "  Web Interface:   https://$FQDN"
+    echo "  API Docs:        https://$FQDN/api/docs"
+    echo "  Note:            Accessible via FQDN. Update DNS records to point to this container."
+elif [ "$NETWORK_MODE" = "proxy" ]; then
+    echo "  Internal Port:   http://$CONTAINER_IP:8080"
+    echo "  Backend Name:    $PROXY_BACKEND"
+    echo "  Note:            Configure your hardware firewall to forward requests to this container"
+    echo "  Proxy Setup:     Add reverse proxy rule in your firewall:"
+    echo "                   $PROXY_BACKEND -> http://$CONTAINER_IP:8080"
+fi
 echo "  Username:        admin"
 echo "  Password:        admin"
 echo ""
