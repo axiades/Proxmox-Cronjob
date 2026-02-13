@@ -37,9 +37,10 @@ Eine vollständige Web-Anwendung zur Verwaltung geplanter VM/Container-Aktionen 
 ## 📋 Anforderungen
 
 ### System
-- Debian 11/12 oder Ubuntu 20.04/22.04 LXC Container
+- Debian 11/12/13 oder Ubuntu 20.04/22.04 LXC Container
 - Mindestens 2 GB RAM
 - 10 GB Speicherplatz
+ - Unterstützte Architekturen: amd64, armhf, arm64
 
 ### Software
 - Python 3.11+
@@ -89,7 +90,7 @@ chmod +x scripts/setup.sh
 Diese Zusatzanleitung ist für Server in Cloud-Umgebungen gedacht, die **nicht** im gleichen Netzwerk wie Proxmox liegen.
 
 **Voraussetzungen:**
-- Öffentliche VM (Debian 11/12 oder Ubuntu 20.04/22.04)
+- Öffentliche VM (Debian 11/12/13 oder Ubuntu 20.04/22.04)
 - Erreichbarkeit der Proxmox API über VPN, WireGuard oder IP-Whitelist
 - DNS-Name (optional, empfohlen für HTTPS)
 
@@ -288,6 +289,27 @@ curl -X POST http://localhost:8000/api/vms/sync \
 ```
 
 ## 🐛 Troubleshooting
+
+### Debian 13 + neueste Python (amd64/armhf/arm64) Build-Tools
+
+Bei Debian 13 mit der neuesten Python-Version werden für einige Pakete (z.B. `psycopg2-binary`, `pydantic-core`) native Build-Tools benötigt.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential python3-dev libpq-dev pkg-config gcc
+
+# Rust/Cargo fuer pydantic-core
+curl https://sh.rustup.rs -sSf | sh -s -- -y
+source $HOME/.cargo/env
+```
+
+Danach erneut installieren:
+
+```bash
+cd /opt/proxmox-cronjob/backend
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
 ### Service startet nicht
 
