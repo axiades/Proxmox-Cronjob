@@ -5,7 +5,7 @@ Das `deploy-lxc.sh` Script richtet den kompletten LXC Container mit allem ein, w
 ## ✅ Automatische Installation
 
 ### System-Level
-- ✓ Debian 12 LXC Container erstellen
+- ✓ Debian 12/13 LXC Container erstellen
 - ✓ System-Updates durchführen
 - ✓ Alle System-Dependencies instalieren
 
@@ -19,7 +19,7 @@ Das `deploy-lxc.sh` Script richtet den kompletten LXC Container mit allem ein, w
 - ✓ Datenbank verifizieren
 
 ### Backend
-- ✓ Python 3.11 installieren
+- ✓ Python 3.11+ installieren (Debian 13 nutzt standardmaessig 3.13)
 - ✓ Virtual Environment erstellen
 - ✓ Alle Python-Dependencies installieren (FastAPI, Proxmoxer, etc.)
 - ✓ `.env` Datei generieren mit:

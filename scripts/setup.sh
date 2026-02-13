@@ -21,7 +21,17 @@ DB_USER="proxmox_cronjob"
 echo ""
 echo "1. Installing system dependencies..."
 apt-get update
-apt-get install -y python3 python3-pip python3-venv postgresql nginx git curl
+apt-get install -y python3 python3-pip python3-venv postgresql nginx git curl \
+    build-essential python3-dev libpq-dev pkg-config gcc
+
+ARCH=$(dpkg --print-architecture)
+if [ "$ARCH" = "armhf" ] || [ "$ARCH" = "arm64" ]; then
+        echo "Installing Rust toolchain for ARM builds..."
+        if ! command -v cargo >/dev/null 2>&1; then
+                curl https://sh.rustup.rs -sSf | sh -s -- -y
+                source /root/.cargo/env
+        fi
+fi
 
 echo ""
 echo "2. Setting up PostgreSQL database..."

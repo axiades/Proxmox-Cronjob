@@ -363,7 +363,7 @@ ENCRYPTION_KEY=$(pct exec "$CTID" -- python3 -c 'from cryptography.fernet import
 
 # Create .env file with actual values
 pct exec "$CTID" -- bash -c "cat > /opt/proxmox-cronjob/backend/.env << ENVEOF
-DATABASE_URL=postgresql://proxmox_cronjob:ProxmoxCron2026!@localhost:5432/proxmox_cronjob
+DATABASE_URL=postgresql+psycopg://proxmox_cronjob:ProxmoxCron2026!@localhost:5432/proxmox_cronjob
 
 SECRET_KEY=$SECRET_KEY
 ALGORITHM=HS256

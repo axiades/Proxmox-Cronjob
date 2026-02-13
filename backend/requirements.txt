@@ -5,7 +5,7 @@ python-multipart==0.0.6
 
 # Database
 sqlalchemy==2.0.25
-psycopg2-binary==2.9.9
+psycopg[binary]==3.2.3
 alembic==1.13.1
 
 # Proxmox API
@@ -23,7 +23,7 @@ croniter==2.0.1
 
 # Utilities
 python-dotenv==1.0.0
-pydantic==2.5.3
-pydantic-settings==2.1.0
+pydantic==2.10.6
+pydantic-settings==2.6.1
 cryptography==42.0.0
 

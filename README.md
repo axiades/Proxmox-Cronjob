@@ -134,7 +134,7 @@ nano .env
 Wichtige Einstellungen:
 ```env
 # Database
-DATABASE_URL=postgresql://proxmox_cronjob:YOUR_PASSWORD@localhost:5432/proxmox_cronjob
+DATABASE_URL=postgresql+psycopg://proxmox_cronjob:YOUR_PASSWORD@localhost:5432/proxmox_cronjob
 
 # Security
 SECRET_KEY=your-secret-key-generate-with-openssl
@@ -300,7 +300,7 @@ curl -X POST http://localhost:8000/api/vms/sync \
 
 ### Debian 13 + neueste Python (amd64/armhf/arm64) Build-Tools
 
-Bei Debian 13 mit der neuesten Python-Version werden für einige Pakete (z.B. `psycopg2-binary`, `pydantic-core`) native Build-Tools benötigt.
+Bei Debian 13 mit der neuesten Python-Version werden für einige Pakete (z.B. `psycopg[binary]`, `pydantic-core`) native Build-Tools benötigt.
 
 ```bash
 sudo apt-get update
